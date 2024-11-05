@@ -59,9 +59,8 @@ lower_bound = 1*(DIGIT) ; 1-based sequence position
 upper_bound = 1*(DIGIT) ; 1-based sequence position, fully closed coordinates
 ```
 
-Examples:                          Meaning:
 ```
-Examples:
+Examples:                          Meaning:
 Chr1                               seq_id="Chr1", whole chromosome
 Seq1:10-30                         seq_id="Seq1", from 10-30, forward strand
 Seq1:30-10                         seq_id="Seq1", from 10-30, reverse strand
@@ -89,12 +88,11 @@ end_position = 1*(DIGIT) ; 1-based sequence position, fully closed coordinates
 
 ```plaintext
 Examples:                          Meaning:
-Chr1
-seq_1:30-40_+
-Seq1;contig4:100-103_-
-chr1:11023-38232_-:100-200_+
-hg38:chr1
-GCA30283222:contig_1:100-200_+
+Chr1                               seq_id="Chr1", whole chromosome
+seq_1:30-40_+                      seq_id="seq_1", from 30-40, forward strand
+Seq1;contig4:100-103_-             seq_id="Seq1;contig4", from 100-103, reverse strand
+chr1:11023-38232_-:100-200_+       seq_id="chr1", from 100-200 forward strand of 11023-38232 reverse strand
+hg38:chr1                          assembly_id="hg38", seq_id="chr1", whole chromosome
 ```
 
 
