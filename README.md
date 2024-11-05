@@ -19,7 +19,8 @@ There are three versions of the Smitten format that are supported by this
 library.  Each format is described below first with a formal specification
 in Augmented Backus-Naur Form (ABNF), and then with examples.
 
-V0:
+## V0 Format
+```abnf
 ID = sequence_identifier *[ “_” start_position “_” end_position [“_R”]]
 special_chars = ":" / “/” / “?” / “#” / “[“ / “]” / “@” / “!” / “$” / “&” / “’” / “(“ / “)”
                 “*” / “+” / “,” / “;” / “=“ / “~” / “|” / “^” / “”” / “>” / “<“ / “.” / “%”
@@ -27,6 +28,7 @@ special_chars = ":" / “/” / “?” / “#” / “[“ / “]” / “@” 
 sequence_identifier = 1*(ALPHA / DIGIT / special_chars)
 start_position = 1*(DIGIT) ; 1-based sequence position
 end_position = 1*(DIGIT) ; 1-based sequence position, fully closed coordinates
+```
 
 Examples:                          Meaning:
 Chr1                               seq_id="Chr1", whole chromosome
