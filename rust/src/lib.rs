@@ -248,7 +248,7 @@ impl Identifier {
                 IDVersion::V0 | IDVersion::V2 if start > end => {
                     return Err(format!(
                         "convertID: V{} identifier '{}' must have increasing range order!",
-                        range_fmt as u8, sequence_id
+                        range_fmt, sequence_id
                     ));
                 }
                 IDVersion::V1 if start > end => (end, start, '-'),
