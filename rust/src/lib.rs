@@ -207,6 +207,7 @@ impl Identifier {
             ));
         }
 
+        //                      1 2  3     4    5     6  7 8    9
         let re = Regex::new(r"(.*)(([:_])(\d+)([-_])(\d+)((_)([R+\-]))?)$").unwrap();
         let mut inferred_fmt = None;
         let mut sequence_id = id.to_string();
@@ -222,19 +223,30 @@ impl Identifier {
 
             let start = if zbho { start + 1 } else { start };
 
-            // Infer format based on separators if not already inferred
+            // Infer format based on separators 
             let range_fmt = if captures.get(3).map(|s| s.as_str()) == Some(":")
                 && captures.get(5).map(|s| s.as_str()) == Some("-")
-                && captures.get(7).is_some()
+                && ( captures.get(7).map(|s| s.as_str()) == Some("_+") ||
+                     captures.get(7).map(|s| s.as_str()) == Some("_-") )
             {
                 IDVersion::V2
             } else if captures.get(3).map(|s| s.as_str()) == Some(":")
-                && captures.get(5).map(|s| s.as_str()) == Some("-")
+                   && captures.get(5).map(|s| s.as_str()) == Some("-")
+                   && captures.get(7).is_none()
             {
                 IDVersion::V1
-            } else {
+            } else if captures.get(3).map(|s| s.as_str()) == Some("_")
+                   && captures.get(5).map(|s| s.as_str()) == Some("_")
+                   && (captures.get(7).is_none() || captures.get(7).map(|s| s.as_str()) == Some("_R") )
+            {
                 IDVersion::V0
+            } else {
+                IDVersion::Undefined
             };
+
+            if range_fmt == IDVersion::Undefined {
+                break;
+            }
 
             if let Some(ref inferred) = inferred_fmt {
                 if *inferred != range_fmt {
@@ -492,14 +504,15 @@ mod tests {
             ("hg38:chr1_100_200_R", "obfc", "pass", Some(IDVersion::V0), "hg38:chr1:100-200_-"),
             ("1_2000_3000_400_500_60_70_8_9", "obfc", "pass", Some(IDVersion::V0), "1:2000-3000_+:400-500_+:60-70_+:8-9_+"),
             ("chr;1_100_200", "obfc", "pass", Some(IDVersion::V0), "chr;1:100-200_+"),
-            ("chr_1_100_200_150_200_R", "obfc", "fail", Some(IDVersion::Undefined), ""),
-            ("HSPA2_0_0", "obfc", "fail", Some(IDVersion::Undefined), ""),
-            ("chr2_200_100", "obfc", "fail", Some(IDVersion::Undefined), ""),
+            // Indistinguishable from a badly formatted V0 (with sequence positions in the wrong
+            // order)
             ("NT_004321_0", "obfc", "fail", Some(IDVersion::Undefined), ""),
-            ("chr13:51174549-51174548_R", "obfc", "fail", Some(IDVersion::Undefined), ""),
             ("_100_200", "obfc", "fail", Some(IDVersion::Undefined), ""),
             ("AMM::1002:Seq1:100_200", "obfc", "fail", Some(IDVersion::Undefined), ""),
             (":_100_200", "obfc", "fail", Some(IDVersion::Undefined), ""),
+            ("chr_1_100_200_150_200_R", "obfc", "fail", Some(IDVersion::Undefined), ""),
+            ("HSPA2_0_0", "obfc", "fail", Some(IDVersion::Undefined), ""),
+            ("chr2_200_100", "obfc", "fail", Some(IDVersion::Undefined), ""),
             // V1 Examples
             ("chr1:1-200", "obfc", "pass", Some(IDVersion::V1), "chr1:1-200_+"),
             ("chr1:200-1", "obfc", "pass", Some(IDVersion::V1), "chr1:1-200_-"),
@@ -531,8 +544,10 @@ mod tests {
             ("hg_38:chr+1:10-40_+", "obfc", "pass", Some(IDVersion::V2), "hg_38:chr+1:10-40_+"),
             ("hg-38:chr_1:10-40_+", "obfc", "pass", Some(IDVersion::V2), "hg-38:chr_1:10-40_+"),
             // Unrecognizable Examples
-            ("seq1_ 1_2", "obfc", "fail", Some(IDVersion::Undefined), ""),
-            ("seq1:1-2\n_+", "obfc", "fail", Some(IDVersion::Undefined), ""),
+            //   Unrecognized ranges, returned as monolithic identifier in Undefined format
+            ("chr1:100_200_R", "obfc", "pass", Some(IDVersion::Undefined), "chr1:100_200_R"),
+            ("chr1:200_100", "obfc", "pass", Some(IDVersion::Undefined), "chr1:200_100"),
+            ("chr13:51174549-51174548_R", "obfc", "pass", Some(IDVersion::Undefined), "chr13:51174549-51174548_R"),
             ("chr1", "obfc", "pass", Some(IDVersion::Undefined), "chr1"),
             ("hg38:chr1", "obfc", "pass", Some(IDVersion::Undefined), "hg38:chr1"),
             ("100_200", "obfc", "pass", Some(IDVersion::Undefined), "100_200"),
@@ -540,6 +555,9 @@ mod tests {
             ("100:200", "obfc", "pass", Some(IDVersion::Undefined), "100:200"),
             ("100:200:", "obfc", "fail", Some(IDVersion::Undefined), ""),
             ("100:200:seq:", "obfc", "fail", Some(IDVersion::Undefined), ""),
+            //   Failures due to invalid characters
+            ("seq1_ 1_2", "obfc", "fail", Some(IDVersion::Undefined), ""),
+            ("seq1:1-2\n_+", "obfc", "fail", Some(IDVersion::Undefined), ""),
         ];
 
         for (id, coord_type, exp_outcome, exp_version, exp_v2_format) in test_cases {
