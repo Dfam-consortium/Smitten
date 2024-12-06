@@ -432,9 +432,9 @@ impl Identifier {
 
             curr_orient = if range.orientation == '-' && curr_orient == '-' {
                 '+'
-            } else if range.orientation == '-' || curr_orient == '+' {
+            } else if range.orientation != curr_orient {
                 '-'
-            } else {
+            }else {
                 curr_orient
             };
         }
