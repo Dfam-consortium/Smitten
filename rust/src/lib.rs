@@ -23,7 +23,7 @@ Here is a quick overview of how the library is used:
  assert_eq!(parsed_id.ranges[0].orientation, '+');
 
  // Parse an unknown Smitten identifier and convert to V2
- let (parsed_id, inferred_version) = Identifier::from_unknown_format("chr1_100_200", false).unwrap();
+ let (parsed_id, inferred_version) = Identifier::from_unknown_format("chr1_100_200", false, false).unwrap();
  assert_eq!(parsed_id.to_string(), "chr1:100-200_+");
 
  // Parse a multi-range Smitten identifier and normalize
@@ -97,6 +97,7 @@ use regex::Regex;
 #[derive(Debug, PartialEq, Clone)]
 pub enum IDVersion {
     Undefined,
+    Mixed,
     V0,
     V1,
     V2,
@@ -120,9 +121,9 @@ pub struct Identifier {
 // Define the API
 impl Identifier {
     /// Creates an `Identifier` from an identifier of unknown format (V0 or V1), converting it to V2.
-    pub fn from_unknown_format(id: &str, zbho: bool) -> Result<(Self, IDVersion), String> {
+    pub fn from_unknown_format(id: &str, zbho: bool, allow_mixed: bool) -> Result<(Self, IDVersion), String> {
         // Attempt to convert to V2 format
-        let (v2_id, inferred_version) = Identifier::convert_id(id, zbho)?;
+        let (v2_id, inferred_version) = Identifier::convert_id(id, zbho, allow_mixed)?;
 
         // Parse the V2 identifier string into an `Identifier` struct
         let identifier = Identifier::parse_id(&v2_id)?;
@@ -135,12 +136,12 @@ impl Identifier {
     // converters in the future for improved error handling.
     /// Other constructors for specific versions remain the same
     pub fn from_v0(id: &str) -> Result<Self, String> {
-        let (v2_id, _) = Identifier::convert_id(id, false)?;
+        let (v2_id, _) = Identifier::convert_id(id, false, false)?;
         Identifier::parse_id(&v2_id)
     }
 
     pub fn from_v1(id: &str) -> Result<Self, String> {
-        let (v2_id, _) = Identifier::convert_id(id, false)?;
+        let (v2_id, _) = Identifier::convert_id(id, false, false)?;
         Identifier::parse_id(&v2_id)
     }
 
@@ -159,6 +160,7 @@ impl std::fmt::Display for IDVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let version_str = match self {
             IDVersion::Undefined => "Undefined",
+            IDVersion::Mixed => "Mixed",
             IDVersion::V0 => "V0",
             IDVersion::V1 => "V1",
             IDVersion::V2 => "V2",
@@ -194,12 +196,13 @@ impl Identifier {
     ///
     /// * `id` - Sequence identifier in V0, V1, or V2 format
     /// * `zbho` - Boolean flag; if true, treats coordinate ranges as zero-based half-open (ZBHO)
+    /// * `allow_mixed` - Boolean flag; if true, allows mixed V0/V1/V2 identifiers
     ///
     /// # Returns
     ///
     /// Returns a tuple `(String, IDVersion)` with the V2 equivalent identifier and inferred version.
     ///
-    fn convert_id(id: &str, zbho: bool) -> Result<(String, IDVersion), String> {
+    fn convert_id(id: &str, zbho: bool, allow_mixed: bool) -> Result<(String, IDVersion), String> {
         if id.contains(|c: char| c.is_whitespace() || c == '\n' || c == '\r') {
             return Err(format!(
                 "convertID: Identifier '{}' contains a space or a line termination character!",
@@ -235,11 +238,21 @@ impl Identifier {
                    && captures.get(7).is_none()
             {
                 IDVersion::V1
+
+            // This is a special case of v0 (e.g "chr1:100-200_R") that was in-use by Arian for
+            // awhile...sigh
+            } else if captures.get(3).map(|s| s.as_str()) == Some(":")
+                   && captures.get(5).map(|s| s.as_str()) == Some("-")
+                   && (captures.get(7).is_none() || captures.get(7).map(|s| s.as_str()) == Some("_R") )
+            {
+                IDVersion::V0
+
             } else if captures.get(3).map(|s| s.as_str()) == Some("_")
                    && captures.get(5).map(|s| s.as_str()) == Some("_")
                    && (captures.get(7).is_none() || captures.get(7).map(|s| s.as_str()) == Some("_R") )
             {
                 IDVersion::V0
+
             } else {
                 IDVersion::Undefined
             };
@@ -250,7 +263,11 @@ impl Identifier {
 
             if let Some(ref inferred) = inferred_fmt {
                 if *inferred != range_fmt {
-                    break;
+                    if allow_mixed {
+                        inferred_fmt = Some(IDVersion::Mixed); 
+                    }else {
+                        break;
+                    }
                 }
             } else {
                 inferred_fmt = Some(range_fmt.clone());
@@ -287,7 +304,7 @@ impl Identifier {
             (0, 1) if !sequence_id.is_empty() => (None, sequence_id.as_str()),
             _ => {
                 return Err(format!(
-                    "convertID: Identifier '{}' contains an invalid assembly+sequence structure.",
+                    "convertID: Identifier '{}' contains an invalid assembly+sequence structure, extra ':'s or no sequence identifier.",
                     id
                 ));
             }
@@ -453,7 +470,7 @@ mod tests {
         exp_v2_format: &str,
     ) {
         let zbho = coord_type == "zbho";
-        let result = Identifier::from_unknown_format(id, zbho);
+        let result = Identifier::from_unknown_format(id, zbho, false);
 
         match (result.clone(), exp_outcome, exp_version.clone()) {
             // Expected pass case
@@ -543,11 +560,13 @@ mod tests {
             ("JANCRE010000006.1_5563658_5564462_R:1-458_+", "obfc", "pass", Some(IDVersion::V2), "JANCRE010000006.1_5563658_5564462_R:1-458_+"),
             ("hg_38:chr+1:10-40_+", "obfc", "pass", Some(IDVersion::V2), "hg_38:chr+1:10-40_+"),
             ("hg-38:chr_1:10-40_+", "obfc", "pass", Some(IDVersion::V2), "hg-38:chr_1:10-40_+"),
+            //
+            // Special case a variant of Arians output for a time
+            ("chr13:51174547-51174560_R", "obfc", "pass", Some(IDVersion::V0), "chr13:51174547-51174560_-"),
             // Unrecognizable Examples
             //   Unrecognized ranges, returned as monolithic identifier in Undefined format
             ("chr1:100_200_R", "obfc", "pass", Some(IDVersion::Undefined), "chr1:100_200_R"),
             ("chr1:200_100", "obfc", "pass", Some(IDVersion::Undefined), "chr1:200_100"),
-            ("chr13:51174549-51174548_R", "obfc", "pass", Some(IDVersion::Undefined), "chr13:51174549-51174548_R"),
             ("chr1", "obfc", "pass", Some(IDVersion::Undefined), "chr1"),
             ("hg38:chr1", "obfc", "pass", Some(IDVersion::Undefined), "hg38:chr1"),
             ("100_200", "obfc", "pass", Some(IDVersion::Undefined), "100_200"),
